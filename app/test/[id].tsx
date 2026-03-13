@@ -21,6 +21,7 @@ import {
     uploadFile,
     upsertVitals,
 } from '@/lib/database';
+import { Feather } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
@@ -36,8 +37,17 @@ import {
     Text,
     View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, {
+    FadeInDown,
+    useAnimatedStyle,
+    useSharedValue,
+    withDelay,
+    withRepeat,
+    withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+export type WizardStep = 'selection' | 'jaundice' | 'cry' | 'vitals' | 'analyzing' | 'report';
 
 export default function TestDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -47,6 +57,14 @@ export default function TestDetailScreen() {
     const [test, setTest] = useState<TestWithAnalyses | null>(null);
     const [loading, setLoading] = useState(true);
     const [riskResult, setRiskResult] = useState<RiskFusionResult | null>(null);
+
+    // Wizard state
+    const [currentStep, setCurrentStep] = useState<WizardStep>('selection');
+    const [selectedModels, setSelectedModels] = useState({
+        jaundice: false,
+        cry: false,
+        vitals: false,
+    });
 
     // Camera state
     const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -63,13 +81,11 @@ export default function TestDetailScreen() {
     const recordingTimer = useRef<NodeJS.Timeout | null>(null);
 
     // Vitals state
-    const [showVitals, setShowVitals] = useState(false);
     const [temperature, setTemperature] = useState('');
     const [feedingStatus, setFeedingStatus] = useState<FeedingStatus | null>(null);
     const [activityLevel, setActivityLevel] = useState<ActivityLevel | null>(null);
     const [savingVitals, setSavingVitals] = useState(false);
 
-    // Load test data
     const loadTest = useCallback(async () => {
         if (!id) return;
         try {
@@ -85,13 +101,18 @@ export default function TestDetailScreen() {
 
             // Compute risk from existing analyses
             computeRisk(data);
+
+            // If test already has results and we haven't started wizard yet, skip to report
+            if (data.analyses.length > 0 && currentStep === 'selection') {
+                setCurrentStep('report');
+            }
         } catch (err) {
             console.error('Load test error:', err);
             Alert.alert('Error', 'Failed to load test data');
         } finally {
             setLoading(false);
         }
-    }, [id]);
+    }, [id, computeRisk, currentStep]);
 
     useEffect(() => {
         loadTest();
@@ -100,6 +121,51 @@ export default function TestDetailScreen() {
     // Get latest analysis of each type
     const latestJaundice = test?.analyses.find((a) => a.type === 'jaundice');
     const latestCry = test?.analyses.find((a) => a.type === 'cry');
+
+    // Navigation and Step Handling
+    const getNextStep = (current: WizardStep): WizardStep => {
+        if (current === 'selection') {
+            if (selectedModels.jaundice) return 'jaundice';
+            if (selectedModels.cry) return 'cry';
+            if (selectedModels.vitals) return 'vitals';
+            return 'analyzing';
+        }
+        if (current === 'jaundice') {
+            if (selectedModels.cry) return 'cry';
+            if (selectedModels.vitals) return 'vitals';
+            return 'analyzing';
+        }
+        if (current === 'cry') {
+            if (selectedModels.vitals) return 'vitals';
+            return 'analyzing';
+        }
+        if (current === 'vitals') return 'analyzing';
+        if (current === 'analyzing') return 'report';
+        return 'report';
+    };
+
+    const handleNext = () => {
+        const next = getNextStep(currentStep);
+        if (next === 'analyzing') {
+            startAnalysisFlow();
+        } else {
+            setCurrentStep(next);
+        }
+    };
+
+    const startAnalysisFlow = async () => {
+        pulse.value = withRepeat(withTiming(1.5, { duration: 1000 }), -1, true);
+        setCurrentStep('analyzing');
+        // Wait for a "cool" duration to show animations
+        setTimeout(() => {
+            setCurrentStep('report');
+        }, 3000);
+    };
+
+    const pulse = useSharedValue(1);
+    const dot1Style = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
+    const dot2Style = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
+    const dot3Style = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
 
     // Compute risk
     const computeRisk = useCallback(
@@ -316,7 +382,393 @@ export default function TestDetailScreen() {
         }
     }, [id, temperature, feedingStatus, activityLevel, loadTest]);
 
-    // ─── Render Helpers ────────────────────────────────────────────────
+    // ─── Step Renders ──────────────────────────────────────────────────
+
+    const renderSelection = () => (
+        <Animated.View entering={FadeInDown.duration(600)} style={styles.content}>
+            <View style={styles.header}>
+                <Pressable onPress={() => router.back()} style={styles.backButton}>
+                    <Text style={styles.backText}>← Cancel</Text>
+                </Pressable>
+            </View>
+
+            <Text style={styles.wizardTitle}>Select Analyses</Text>
+            <Text style={styles.wizardSubtitle}>
+                Choose which screening models you would like to run for {test?.name}.
+            </Text>
+
+            <View style={styles.selectionGrid}>
+                {[
+                    { id: 'jaundice', name: 'Jaundice Scan', icon: 'camera', desc: 'Camera-based skin analysis' },
+                    { id: 'cry', name: 'Cry Analysis', icon: 'mic', desc: 'Audio classification' },
+                    { id: 'vitals', name: 'Manual Vitals', icon: 'activity', desc: 'Temperature & signs' }
+                ].map((item) => {
+                    const isSelected = selectedModels[item.id as keyof typeof selectedModels];
+                    return (
+                        <Pressable
+                            key={item.id}
+                            style={[styles.selectionCard, isSelected && styles.selectionCardActive]}
+                            onPress={() => setSelectedModels(prev => ({ ...prev, [item.id]: !isSelected }))}
+                        >
+                            <Feather
+                                name={item.icon as any}
+                                size={32}
+                                color={isSelected ? Colors.primary : Colors.textMuted}
+                            />
+                            <Text style={[styles.selectionTitle, isSelected && styles.selectionTitleActive]}>
+                                {item.name}
+                            </Text>
+                            <Text style={styles.selectionDesc}>{item.desc}</Text>
+                        </Pressable>
+                    );
+                })}
+            </View>
+
+            <NeoButton
+                title="Start Screening"
+                onPress={handleNext}
+                fullWidth
+                size="lg"
+                disabled={!selectedModels.jaundice && !selectedModels.cry && !selectedModels.vitals}
+                style={{ marginTop: Spacing.huge }}
+            />
+        </Animated.View>
+    );
+
+    const renderJaundiceStep = () => (
+        <Animated.View entering={FadeInDown.duration(600)} style={styles.content}>
+            <Text style={styles.wizardTitle}>Jaundice Scan</Text>
+            <Text style={styles.wizardSubtitle}>Capture a clear image of the baby's face or skin.</Text>
+
+            <GlassCard style={styles.analysisCard}>
+                <View style={styles.cardHeader}>
+                    <Feather name="camera" size={32} color={Colors.primary} />
+                    <View>
+                        <Text style={styles.cardTitle}>Image Capture</Text>
+                        <Text style={styles.cardSubtitle}>Position skin in frame</Text>
+                    </View>
+                </View>
+
+                {analyzingImage ? (
+                    <View style={styles.analyzeState}>
+                        <ActivityIndicator size="large" color={Colors.primary} />
+                        <Text style={styles.analyzeText}>Processing image...</Text>
+                    </View>
+                ) : latestJaundice ? (
+                    <View>
+                        <View style={styles.resultRow}>
+                            <View>
+                                <Text style={styles.resultLabel}>Status</Text>
+                                <Text style={styles.resultValueSuccess}>Captured</Text>
+                            </View>
+                            <Feather name="check-circle" size={40} color={Colors.riskLow} />
+                        </View>
+                        {capturedImage && (
+                            <Image source={{ uri: capturedImage }} style={styles.thumbnail} />
+                        )}
+                        <NeoButton
+                            title="Retake Scan"
+                            onPress={openCamera}
+                            variant="outline"
+                            size="sm"
+                            style={{ marginTop: Spacing.md }}
+                        />
+                    </View>
+                ) : (
+                    <NeoButton
+                        title="Open Camera"
+                        onPress={openCamera}
+                        fullWidth
+                        style={{ marginTop: Spacing.md }}
+                    />
+                )}
+            </GlassCard>
+
+            <View style={styles.stepFooter}>
+                <NeoButton
+                    title="Next Step"
+                    onPress={handleNext}
+                    fullWidth
+                    size="lg"
+                    disabled={!latestJaundice}
+                />
+            </View>
+        </Animated.View>
+    );
+
+    const renderCryStep = () => (
+        <Animated.View entering={FadeInDown.duration(600)} style={styles.content}>
+            <Text style={styles.wizardTitle}>Cry Analysis</Text>
+            <Text style={styles.wizardSubtitle}>Record 10 seconds of the baby crying.</Text>
+
+            <GlassCard style={styles.analysisCard}>
+                <View style={styles.cardHeader}>
+                    <Feather name="mic" size={32} color={Colors.primary} />
+                    <View>
+                        <Text style={styles.cardTitle}>Audio Recording</Text>
+                        <Text style={styles.cardSubtitle}>Ensure quiet environment</Text>
+                    </View>
+                </View>
+
+                {analyzingAudio ? (
+                    <View style={styles.analyzeState}>
+                        <ActivityIndicator size="large" color={Colors.primary} />
+                        <Text style={styles.analyzeText}>Analyzing cry pattern...</Text>
+                    </View>
+                ) : isRecording ? (
+                    <View style={styles.recordingState}>
+                        <View style={styles.recordingDot} />
+                        <Text style={styles.recordingTime}>{recordingDuration}s / 10s</Text>
+                        <Text style={styles.recordingLabel}>Recording...</Text>
+                        <NeoButton
+                            title="Stop"
+                            onPress={stopRecording}
+                            variant="danger"
+                            size="sm"
+                            style={{ marginTop: Spacing.md }}
+                        />
+                    </View>
+                ) : latestCry ? (
+                    <View>
+                        <View style={styles.resultRow}>
+                            <View>
+                                <Text style={styles.resultLabel}>Status</Text>
+                                <Text style={styles.resultValueSuccess}>Recorded</Text>
+                            </View>
+                            <Feather name="check-circle" size={40} color={Colors.riskLow} />
+                        </View>
+                        <NeoButton
+                            title="Record Again"
+                            onPress={startRecording}
+                            variant="outline"
+                            size="sm"
+                            style={{ marginTop: Spacing.md }}
+                        />
+                    </View>
+                ) : (
+                    <NeoButton
+                        title="Start Recording"
+                        onPress={startRecording}
+                        fullWidth
+                        style={{ marginTop: Spacing.md }}
+                    />
+                )}
+            </GlassCard>
+
+            <View style={styles.stepFooter}>
+                <NeoButton
+                    title="Next Step"
+                    onPress={handleNext}
+                    fullWidth
+                    size="lg"
+                    disabled={!latestCry}
+                />
+            </View>
+        </Animated.View>
+    );
+
+    const renderVitalsStep = () => (
+        <Animated.View entering={FadeInDown.duration(600)} style={styles.content}>
+            <Text style={styles.wizardTitle}>Manual Vitals</Text>
+            <Text style={styles.wizardSubtitle}>Enter basic vitals to improve assessment accuracy.</Text>
+
+            <GlassCard style={styles.vitalsForm}>
+                <NeoInput
+                    label="Temperature (°C)"
+                    placeholder="e.g., 37.5"
+                    value={temperature}
+                    onChangeText={setTemperature}
+                    keyboardType="decimal-pad"
+                />
+
+                <Text style={styles.vitalsLabel}>Feeding Status</Text>
+                <View style={styles.optionRow}>
+                    {(['Normal', 'Poor', 'Not feeding'] as FeedingStatus[]).map((opt) => (
+                        <Pressable
+                            key={opt}
+                            style={[
+                                styles.optionChip,
+                                feedingStatus === opt && styles.optionSelected,
+                            ]}
+                            onPress={() => setFeedingStatus(opt)}
+                        >
+                            <Text
+                                style={[
+                                    styles.optionText,
+                                    feedingStatus === opt && styles.optionTextSelected,
+                                ]}
+                            >
+                                {opt}
+                            </Text>
+                        </Pressable>
+                    ))}
+                </View>
+
+                <Text style={styles.vitalsLabel}>Activity Level</Text>
+                <View style={styles.optionRow}>
+                    {(['Active', 'Weak', 'Unresponsive'] as ActivityLevel[]).map((opt) => (
+                        <Pressable
+                            key={opt}
+                            style={[
+                                styles.optionChip,
+                                activityLevel === opt && styles.optionSelected,
+                            ]}
+                            onPress={() => setActivityLevel(opt)}
+                        >
+                            <Text
+                                style={[
+                                    styles.optionText,
+                                    activityLevel === opt && styles.optionTextSelected,
+                                ]}
+                            >
+                                {opt}
+                            </Text>
+                        </Pressable>
+                    ))}
+                </View>
+            </GlassCard>
+
+            <View style={styles.stepFooter}>
+                <NeoButton
+                    title="Analyze Results"
+                    onPress={async () => {
+                        await handleSaveVitals();
+                        handleNext();
+                    }}
+                    loading={savingVitals}
+                    fullWidth
+                    size="lg"
+                />
+            </View>
+        </Animated.View>
+    );
+
+    const renderAnalyzing = () => (
+        <View style={styles.analyzingContainer}>
+            <Animated.View entering={FadeInDown.duration(1000)} style={styles.analyzingContent}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+                <Text style={styles.analyzingTitle}>Fusing Data...</Text>
+                <Text style={styles.analyzingSubtitle}>
+                    AI models are converging to generate your risk report.
+                </Text>
+
+                <View style={styles.analyzingDots}>
+                    <Animated.View style={[styles.analyzingDot, dot1Style]} />
+                    <Animated.View style={[styles.analyzingDot, dot2Style, { opacity: 0.6 }]} />
+                    <Animated.View style={[styles.analyzingDot, dot3Style, { opacity: 0.3 }]} />
+                </View>
+            </Animated.View>
+        </View>
+    );
+
+    const renderReport = () => (
+        <ScrollView
+            style={styles.container}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+        >
+            <View style={styles.header}>
+                <Pressable onPress={() => router.back()} style={styles.backButton}>
+                    <Text style={styles.backText}>← Dashboard</Text>
+                </Pressable>
+            </View>
+
+            <Animated.View entering={FadeInDown.duration(500)}>
+                <View style={styles.titleRow}>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.testTitle}>{test?.name}</Text>
+                        <Text style={styles.testDate}>
+                            {test?.created_at
+                                ? new Date(test.created_at).toLocaleDateString('en-US', {
+                                    weekday: 'long',
+                                    month: 'long',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                })
+                                : ''}
+                        </Text>
+                    </View>
+                    <RiskBadge risk={test?.overall_risk || 'pending'} />
+                </View>
+            </Animated.View>
+
+            {riskResult && (
+                <Animated.View entering={FadeInDown.duration(600).delay(100)}>
+                    <GlassCard
+                        variant={
+                            riskResult.risk_level === 'high'
+                                ? 'risk-high'
+                                : riskResult.risk_level === 'moderate'
+                                    ? 'risk-moderate'
+                                    : 'risk-low'
+                        }
+                        style={styles.riskSection}
+                    >
+                        <Text style={styles.sectionTitle}>Final Assessment</Text>
+                        <View style={styles.riskMeterContainer}>
+                            <RiskMeter
+                                score={riskResult.score}
+                                riskLevel={riskResult.risk_level}
+                                size={220}
+                            />
+                        </View>
+                        <Text style={styles.recommendation}>{riskResult.recommended_action}</Text>
+                    </GlassCard>
+                </Animated.View>
+            )}
+
+            {/* Input Summary */}
+            <Text style={styles.historyTitle}>Input Details</Text>
+            {test?.analyses.map((a) => (
+                <View key={a.id} style={styles.historyItem}>
+                    <Feather
+                        name={a.type === 'jaundice' ? 'camera' : 'mic'}
+                        size={20}
+                        color={Colors.textSecondary}
+                    />
+                    <View style={styles.historyContent}>
+                        <Text style={styles.historyLabel}>
+                            {a.type === 'jaundice' ? 'Jaundice Scan' : 'Cry Analysis'}
+                        </Text>
+                        <Text style={styles.historyResult}>
+                            {a.label} — {Math.round(a.score || 0)}%
+                        </Text>
+                    </View>
+                </View>
+            ))}
+
+            {test?.vitals && (
+                <View style={styles.historyItem}>
+                    <Feather name="activity" size={20} color={Colors.textSecondary} />
+                    <View style={styles.historyContent}>
+                        <Text style={styles.historyLabel}>Manual Vitals</Text>
+                        <Text style={styles.historyResult}>
+                            {test.vitals.temperature}°C • {test.vitals.feeding_status} • {test.vitals.activity_level}
+                        </Text>
+                    </View>
+                </View>
+            )}
+
+            <NeoButton
+                title="Talk to AI Specialist"
+                onPress={() => router.push('/(tabs)/chat')}
+                variant="primary"
+                fullWidth
+                size="lg"
+                icon={<Feather name="message-square" size={20} color="white" />}
+                style={{ marginTop: Spacing.huge }}
+            />
+
+            <NeoButton
+                title="Done"
+                onPress={() => router.replace('/')}
+                variant="outline"
+                fullWidth
+                size="lg"
+                style={{ marginTop: Spacing.md }}
+            />
+        </ScrollView>
+    );
 
     const getSeverityColor = (label: string | null) => {
         switch (label) {
@@ -380,335 +832,22 @@ export default function TestDetailScreen() {
         );
     }
 
+    const renderContent = () => {
+        switch (currentStep) {
+            case 'selection': return renderSelection();
+            case 'jaundice': return renderJaundiceStep();
+            case 'cry': return renderCryStep();
+            case 'vitals': return renderVitalsStep();
+            case 'analyzing': return renderAnalyzing();
+            case 'report': return renderReport();
+            default: return renderSelection();
+        }
+    };
+
     return (
-        <ScrollView
-            style={[styles.container, { paddingTop: insets.top }]}
-            contentContainerStyle={styles.content}
-            showsVerticalScrollIndicator={false}
-        >
-            {/* Header */}
-            <View style={styles.header}>
-                <Pressable onPress={() => router.back()} style={styles.backButton}>
-                    <Text style={styles.backText}>← Back</Text>
-                </Pressable>
-            </View>
-
-            <Animated.View entering={FadeInDown.duration(500)}>
-                <View style={styles.titleRow}>
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.testTitle}>{test?.name}</Text>
-                        <Text style={styles.testDate}>
-                            {test?.created_at
-                                ? new Date(test.created_at).toLocaleDateString('en-US', {
-                                    weekday: 'long',
-                                    month: 'long',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                })
-                                : ''}
-                        </Text>
-                    </View>
-                    <RiskBadge risk={test?.overall_risk || 'pending'} />
-                </View>
-            </Animated.View>
-
-            {/* ─── Risk Fusion Section ─────────────────────────────────── */}
-            {riskResult && (
-                <Animated.View entering={FadeInDown.duration(600).delay(100)}>
-                    <GlassCard
-                        variant={
-                            riskResult.risk_level === 'high'
-                                ? 'risk-high'
-                                : riskResult.risk_level === 'moderate'
-                                    ? 'risk-moderate'
-                                    : 'risk-low'
-                        }
-                        style={styles.riskSection}
-                    >
-                        <Text style={styles.sectionTitle}>Risk Assessment</Text>
-                        <View style={styles.riskMeterContainer}>
-                            <RiskMeter
-                                score={riskResult.score}
-                                riskLevel={riskResult.risk_level}
-                                size={220}
-                            />
-                        </View>
-                        <Text style={styles.recommendation}>{riskResult.recommended_action}</Text>
-                    </GlassCard>
-                </Animated.View>
-            )}
-
-            {/* ─── Jaundice Card ───────────────────────────────────────── */}
-            <Animated.View entering={FadeInDown.duration(600).delay(200)}>
-                <GlassCard style={styles.analysisCard}>
-                    <View style={styles.cardHeader}>
-                        <Text style={styles.cardEmoji}>📷</Text>
-                        <View>
-                            <Text style={styles.cardTitle}>Jaundice Scan</Text>
-                            <Text style={styles.cardSubtitle}>Camera-based skin analysis</Text>
-                        </View>
-                    </View>
-
-                    {analyzingImage ? (
-                        <View style={styles.analyzeState}>
-                            <ActivityIndicator size="large" color={Colors.primary} />
-                            <Text style={styles.analyzeText}>Analyzing image...</Text>
-                        </View>
-                    ) : latestJaundice ? (
-                        <View>
-                            {/* Result */}
-                            <View style={styles.resultRow}>
-                                <View>
-                                    <Text style={styles.resultLabel}>Severity</Text>
-                                    <Text
-                                        style={[
-                                            styles.resultValue,
-                                            { color: getSeverityColor(latestJaundice.label) },
-                                        ]}
-                                    >
-                                        {latestJaundice.label}
-                                    </Text>
-                                </View>
-                                <View style={styles.scoreCircle}>
-                                    <Text style={styles.scoreValue}>{Math.round(latestJaundice.score || 0)}%</Text>
-                                    <Text style={styles.scoreLabel}>Score</Text>
-                                </View>
-                            </View>
-
-                            {/* Progress bar */}
-                            <View style={styles.progressBar}>
-                                <View
-                                    style={[
-                                        styles.progressFill,
-                                        {
-                                            width: `${latestJaundice.score || 0}%`,
-                                            backgroundColor: getSeverityColor(latestJaundice.label),
-                                        },
-                                    ]}
-                                />
-                            </View>
-
-                            {capturedImage && (
-                                <Image source={{ uri: capturedImage }} style={styles.thumbnail} />
-                            )}
-
-                            <NeoButton
-                                title="Retake Scan"
-                                onPress={openCamera}
-                                variant="outline"
-                                size="sm"
-                                style={{ marginTop: Spacing.md }}
-                            />
-                        </View>
-                    ) : (
-                        <NeoButton
-                            title="Capture Image"
-                            onPress={openCamera}
-                            fullWidth
-                            style={{ marginTop: Spacing.md }}
-                        />
-                    )}
-                </GlassCard>
-            </Animated.View>
-
-            {/* ─── Cry Analysis Card ───────────────────────────────────── */}
-            <Animated.View entering={FadeInDown.duration(600).delay(300)}>
-                <GlassCard style={styles.analysisCard}>
-                    <View style={styles.cardHeader}>
-                        <Text style={styles.cardEmoji}>🎙️</Text>
-                        <View>
-                            <Text style={styles.cardTitle}>Cry Analysis</Text>
-                            <Text style={styles.cardSubtitle}>Audio classification</Text>
-                        </View>
-                    </View>
-
-                    {analyzingAudio ? (
-                        <View style={styles.analyzeState}>
-                            <ActivityIndicator size="large" color={Colors.primary} />
-                            <Text style={styles.analyzeText}>Analyzing audio...</Text>
-                        </View>
-                    ) : isRecording ? (
-                        <View style={styles.recordingState}>
-                            <Animated.View style={styles.recordingPulse}>
-                                <View style={styles.recordingDot} />
-                            </Animated.View>
-                            <Text style={styles.recordingTime}>{recordingDuration}s / 10s</Text>
-                            <Text style={styles.recordingLabel}>Recording...</Text>
-                            <View style={styles.waveform}>
-                                {Array.from({ length: 20 }).map((_, i) => (
-                                    <View
-                                        key={i}
-                                        style={[
-                                            styles.waveBar,
-                                            {
-                                                height: 8 + Math.random() * 32,
-                                                backgroundColor:
-                                                    recordingDuration > 0
-                                                        ? Colors.primary
-                                                        : Colors.textMuted,
-                                            },
-                                        ]}
-                                    />
-                                ))}
-                            </View>
-                            <NeoButton
-                                title="Stop Recording"
-                                onPress={stopRecording}
-                                variant="danger"
-                                fullWidth
-                                style={{ marginTop: Spacing.lg }}
-                            />
-                        </View>
-                    ) : latestCry ? (
-                        <View>
-                            <View style={styles.resultRow}>
-                                <View>
-                                    <Text style={styles.resultLabel}>Classification</Text>
-                                    <Text
-                                        style={[
-                                            styles.resultValue,
-                                            { color: getSeverityColor(latestCry.label) },
-                                        ]}
-                                    >
-                                        {latestCry.label}
-                                    </Text>
-                                </View>
-                                <View style={styles.scoreCircle}>
-                                    <Text style={styles.scoreValue}>{Math.round(latestCry.score || 0)}%</Text>
-                                    <Text style={styles.scoreLabel}>Confidence</Text>
-                                </View>
-                            </View>
-
-                            <NeoButton
-                                title="Record Again"
-                                onPress={startRecording}
-                                variant="outline"
-                                size="sm"
-                                style={{ marginTop: Spacing.md }}
-                            />
-                        </View>
-                    ) : (
-                        <NeoButton
-                            title="Record Cry (10s max)"
-                            onPress={startRecording}
-                            fullWidth
-                            style={{ marginTop: Spacing.md }}
-                        />
-                    )}
-                </GlassCard>
-            </Animated.View>
-
-            {/* ─── Manual Vitals ───────────────────────────────────────── */}
-            <Animated.View entering={FadeInDown.duration(600).delay(400)}>
-                <Pressable onPress={() => setShowVitals(!showVitals)}>
-                    <GlassCard style={styles.vitalsCard}>
-                        <View style={styles.vitalsHeader}>
-                            <View>
-                                <Text style={styles.cardTitle}>Manual Vitals</Text>
-                                <Text style={styles.cardSubtitle}>Optional — improves accuracy</Text>
-                            </View>
-                            <Text style={styles.chevron}>{showVitals ? '▲' : '▼'}</Text>
-                        </View>
-                    </GlassCard>
-                </Pressable>
-
-                {showVitals && (
-                    <Animated.View entering={FadeInDown.duration(300)}>
-                        <GlassCard style={styles.vitalsForm}>
-                            <NeoInput
-                                label="Temperature (°C)"
-                                placeholder="e.g., 37.5"
-                                value={temperature}
-                                onChangeText={setTemperature}
-                                keyboardType="decimal-pad"
-                            />
-
-                            <Text style={styles.vitalsLabel}>Feeding Status</Text>
-                            <View style={styles.optionRow}>
-                                {(['Normal', 'Poor', 'Not feeding'] as FeedingStatus[]).map((opt) => (
-                                    <Pressable
-                                        key={opt}
-                                        style={[
-                                            styles.optionChip,
-                                            feedingStatus === opt && styles.optionSelected,
-                                        ]}
-                                        onPress={() => setFeedingStatus(opt)}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.optionText,
-                                                feedingStatus === opt && styles.optionTextSelected,
-                                            ]}
-                                        >
-                                            {opt}
-                                        </Text>
-                                    </Pressable>
-                                ))}
-                            </View>
-
-                            <Text style={styles.vitalsLabel}>Activity Level</Text>
-                            <View style={styles.optionRow}>
-                                {(['Active', 'Weak', 'Unresponsive'] as ActivityLevel[]).map((opt) => (
-                                    <Pressable
-                                        key={opt}
-                                        style={[
-                                            styles.optionChip,
-                                            activityLevel === opt && styles.optionSelected,
-                                        ]}
-                                        onPress={() => setActivityLevel(opt)}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.optionText,
-                                                activityLevel === opt && styles.optionTextSelected,
-                                            ]}
-                                        >
-                                            {opt}
-                                        </Text>
-                                    </Pressable>
-                                ))}
-                            </View>
-
-                            <NeoButton
-                                title="Save Vitals & Recompute Risk"
-                                onPress={handleSaveVitals}
-                                loading={savingVitals}
-                                fullWidth
-                                style={{ marginTop: Spacing.lg }}
-                            />
-                        </GlassCard>
-                    </Animated.View>
-                )}
-            </Animated.View>
-
-            {/* ─── Analysis History ────────────────────────────────────── */}
-            {test && test.analyses.length > 0 && (
-                <Animated.View entering={FadeInDown.duration(600).delay(500)}>
-                    <Text style={styles.historyTitle}>Analysis History</Text>
-                    {test.analyses.map((a, index) => (
-                        <View key={a.id} style={styles.historyItem}>
-                            <Text style={styles.historyIcon}>
-                                {a.type === 'jaundice' ? '📷' : '🎙️'}
-                            </Text>
-                            <View style={styles.historyContent}>
-                                <Text style={styles.historyLabel}>
-                                    {a.type === 'jaundice' ? 'Jaundice Scan' : 'Cry Analysis'}
-                                </Text>
-                                <Text style={styles.historyResult}>
-                                    {a.label} — {Math.round(a.score || 0)}%
-                                </Text>
-                            </View>
-                            <Text style={styles.historyDate}>
-                                {new Date(a.created_at).toLocaleTimeString([], {
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                })}
-                            </Text>
-                        </View>
-                    ))}
-                </Animated.View>
-            )}
-        </ScrollView>
+        <View style={[styles.container, { paddingTop: insets.top }]}>
+            {renderContent()}
+        </View>
     );
 }
 
@@ -775,9 +914,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: Spacing.md,
-    },
-    cardEmoji: {
-        fontSize: 32,
     },
     cardTitle: {
         fontFamily: FontFamily.heading,
@@ -1029,9 +1165,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: Colors.border,
     },
-    historyIcon: {
-        fontSize: 20,
-    },
     historyContent: {
         flex: 1,
     },
@@ -1050,5 +1183,102 @@ const styles = StyleSheet.create({
         fontFamily: FontFamily.body,
         fontSize: FontSize.xs,
         color: Colors.textMuted,
+    },
+
+    // Wizard Shared
+    wizardTitle: {
+        fontFamily: FontFamily.headingBold,
+        fontSize: FontSize.xxl,
+        color: Colors.textPrimary,
+        marginTop: Spacing.xl,
+    },
+    wizardSubtitle: {
+        fontFamily: FontFamily.body,
+        fontSize: FontSize.md,
+        color: Colors.textSecondary,
+        marginTop: Spacing.xs,
+        marginBottom: Spacing.huge,
+        lineHeight: 22,
+    },
+    stepFooter: {
+        marginTop: Spacing.huge,
+        paddingTop: Spacing.xl,
+        borderTopWidth: 1,
+        borderTopColor: Colors.border,
+    },
+
+    // Selection Step
+    selectionGrid: {
+        gap: Spacing.lg,
+    },
+    selectionCard: {
+        backgroundColor: Colors.surface,
+        borderRadius: BorderRadius.xl,
+        padding: Spacing.xl,
+        borderWidth: 1,
+        borderColor: Colors.border,
+        gap: Spacing.xs,
+    },
+    selectionCardActive: {
+        borderColor: Colors.primary,
+        backgroundColor: Colors.primaryDim,
+    },
+    selectionTitle: {
+        fontFamily: FontFamily.heading,
+        fontSize: FontSize.lg,
+        color: Colors.textPrimary,
+        marginTop: Spacing.xs,
+    },
+    selectionTitleActive: {
+        color: Colors.primary,
+    },
+    selectionDesc: {
+        fontFamily: FontFamily.body,
+        fontSize: FontSize.sm,
+        color: Colors.textMuted,
+    },
+
+    // Analyzing Step
+    analyzingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: Colors.background,
+    },
+    analyzingContent: {
+        alignItems: 'center',
+        gap: Spacing.md,
+        padding: Spacing.huge,
+    },
+    analyzingTitle: {
+        fontFamily: FontFamily.headingBold,
+        fontSize: FontSize.xxl,
+        color: Colors.textPrimary,
+        marginTop: Spacing.lg,
+    },
+    analyzingSubtitle: {
+        fontFamily: FontFamily.body,
+        fontSize: FontSize.md,
+        color: Colors.textSecondary,
+        textAlign: 'center',
+        lineHeight: 24,
+    },
+    analyzingDots: {
+        flexDirection: 'row',
+        gap: Spacing.sm,
+        marginTop: Spacing.xl,
+    },
+    analyzingDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: Colors.primary,
+    },
+
+    resultValueSuccess: {
+        fontFamily: FontFamily.headingBold,
+        fontSize: FontSize.xl,
+        color: Colors.riskLow,
+        marginTop: 2,
     },
 });

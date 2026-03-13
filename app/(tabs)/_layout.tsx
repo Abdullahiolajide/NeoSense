@@ -130,8 +130,10 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: Colors.surface,
-    borderTopColor: Colors.border,
+    borderTopColor: 'rgba(0, 229, 255, 0.1)',
     borderTopWidth: 1,
+    elevation: 0,
+    shadowColor: 'transparent',
     height: Platform.OS === 'ios' ? 88 : 68,
     paddingTop: Spacing.sm,
     paddingBottom: Platform.OS === 'ios' ? 28 : Spacing.sm,

@@ -5,10 +5,11 @@ import { SkeletonCard } from '@/components/SkeletonLoader';
 import { Colors, FontFamily, FontSize, Shadows, Spacing } from '@/constants/Theme';
 import type { Test } from '@/constants/Types';
 import { useAuth } from '@/contexts/AuthContext';
-import { getTests } from '@/lib/database';
+import { deleteTest, getTests } from '@/lib/database';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+    Alert,
     FlatList,
     Pressable,
     RefreshControl,
@@ -16,6 +17,7 @@ import {
     Text,
     View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -55,11 +57,37 @@ export default function TestsScreen() {
         });
     };
 
+    const handleDeleteTest = async (testId: string, testName: string) => {
+        Alert.alert(
+            'Delete Test',
+            `Are you sure you want to delete "${testName}"? This action cannot be undone.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await deleteTest(testId);
+                            loadTests();
+                        } catch (err) {
+                            console.error('Delete test error:', err);
+                            Alert.alert('Error', 'Failed to delete test');
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     const renderTest = useCallback(
         ({ item, index }: { item: Test; index: number }) => (
             <Animated.View entering={FadeInRight.duration(400).delay(index * 80)}>
-                <Pressable onPress={() => router.push(`/test/${item.id}`)}>
-                    <GlassCard style={styles.testCard}>
+                <GlassCard style={styles.testCard}>
+                    <Pressable 
+                        onPress={() => router.push(`/test/${item.id}`)}
+                        style={styles.cardPressable}
+                    >
                         <View style={styles.cardHeader}>
                             <View style={styles.cardTitleArea}>
                                 <Text style={styles.testName} numberOfLines={1}>
@@ -74,11 +102,23 @@ export default function TestsScreen() {
                                 {item.notes}
                             </Text>
                         ) : null}
-                        <View style={styles.cardFooter}>
+                    </Pressable>
+
+                    <View style={styles.cardFooter}>
+                        <Pressable 
+                            onPress={() => router.push(`/test/${item.id}`)}
+                            style={styles.viewDetailsBtn}
+                        >
                             <Text style={styles.viewDetails}>View Details →</Text>
-                        </View>
-                    </GlassCard>
-                </Pressable>
+                        </Pressable>
+                        <Pressable 
+                            onPress={() => handleDeleteTest(item.id, item.name)}
+                            style={styles.deleteBtn}
+                        >
+                            <Feather name="trash-2" size={18} color={Colors.error} />
+                        </Pressable>
+                    </View>
+                </GlassCard>
             </Animated.View>
         ),
         [router]
@@ -199,16 +239,29 @@ const styles = StyleSheet.create({
         color: Colors.textSecondary,
         marginBottom: Spacing.sm,
     },
-    cardFooter: {
-        borderTopWidth: 1,
-        borderTopColor: Colors.border,
-        paddingTop: Spacing.md,
-        marginTop: Spacing.sm,
+    cardPressable: {
+        padding: 0,
     },
     viewDetails: {
         fontFamily: FontFamily.bodyMedium,
         fontSize: FontSize.sm,
         color: Colors.primary,
+    },
+    cardFooter: {
+        borderTopWidth: 1,
+        borderTopColor: Colors.border,
+        paddingTop: Spacing.md,
+        marginTop: Spacing.sm,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    viewDetailsBtn: {
+        flex: 1,
+    },
+    deleteBtn: {
+        padding: Spacing.xs,
+        marginLeft: Spacing.md,
     },
     emptyContainer: {
         flex: 1,

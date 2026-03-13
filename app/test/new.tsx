@@ -3,6 +3,7 @@ import { NeoInput } from '@/components/NeoInput';
 import { Colors, FontFamily, FontSize, Spacing } from '@/constants/Theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { createTest } from '@/lib/database';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
@@ -100,45 +101,13 @@ export default function NewTestScreen() {
                     />
 
                     <NeoButton
-                        title="Create Test & Start Screening"
+                        title="Next"
                         onPress={handleCreate}
                         loading={loading}
                         fullWidth
                         size="lg"
                         style={{ marginTop: Spacing.xl }}
                     />
-                </Animated.View>
-
-                {/* Quick Guide */}
-                <Animated.View entering={FadeInDown.duration(600).delay(400)} style={styles.guideSection}>
-                    <Text style={styles.guideTitle}>What happens next?</Text>
-                    <View style={styles.guideStep}>
-                        <Text style={styles.guideNumber}>1</Text>
-                        <View style={styles.guideContent}>
-                            <Text style={styles.guideStepTitle}>📷 Jaundice Scan</Text>
-                            <Text style={styles.guideStepText}>
-                                Capture an image of the baby's skin/eyes for jaundice analysis
-                            </Text>
-                        </View>
-                    </View>
-                    <View style={styles.guideStep}>
-                        <Text style={styles.guideNumber}>2</Text>
-                        <View style={styles.guideContent}>
-                            <Text style={styles.guideStepTitle}>🎙️ Cry Analysis</Text>
-                            <Text style={styles.guideStepText}>
-                                Record the baby's cry for audio classification
-                            </Text>
-                        </View>
-                    </View>
-                    <View style={styles.guideStep}>
-                        <Text style={styles.guideNumber}>3</Text>
-                        <View style={styles.guideContent}>
-                            <Text style={styles.guideStepTitle}>📊 Risk Assessment</Text>
-                            <Text style={styles.guideStepText}>
-                                Get an AI-powered risk fusion score with recommendations
-                            </Text>
-                        </View>
-                    </View>
                 </Animated.View>
             </ScrollView>
         </KeyboardAvoidingView>
@@ -190,47 +159,5 @@ const styles = StyleSheet.create({
         fontFamily: FontFamily.body,
         fontSize: FontSize.sm,
         color: Colors.error,
-    },
-    guideSection: {
-        marginTop: Spacing.huge,
-    },
-    guideTitle: {
-        fontFamily: FontFamily.heading,
-        fontSize: FontSize.lg,
-        color: Colors.textPrimary,
-        marginBottom: Spacing.xl,
-    },
-    guideStep: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        marginBottom: Spacing.xl,
-        gap: Spacing.lg,
-    },
-    guideNumber: {
-        fontFamily: FontFamily.headingBold,
-        fontSize: FontSize.md,
-        color: Colors.primary,
-        width: 28,
-        height: 28,
-        lineHeight: 28,
-        textAlign: 'center',
-        borderRadius: 14,
-        backgroundColor: Colors.primaryDim,
-        overflow: 'hidden',
-    },
-    guideContent: {
-        flex: 1,
-    },
-    guideStepTitle: {
-        fontFamily: FontFamily.heading,
-        fontSize: FontSize.md,
-        color: Colors.textPrimary,
-        marginBottom: 4,
-    },
-    guideStepText: {
-        fontFamily: FontFamily.body,
-        fontSize: FontSize.sm,
-        color: Colors.textSecondary,
-        lineHeight: 20,
     },
 });

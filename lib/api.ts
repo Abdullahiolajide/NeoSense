@@ -171,10 +171,10 @@ export async function sendChatMessage(
         }
 
         const text = responseData?.candidates?.[0]?.content?.parts?.[0]?.text;
-        return text || 'I apologize, but I couldn\\'t generate a response. Please try again.';
+        return text || "I apologize, but I couldn't generate a response. Please try again.";
     } catch (error) {
         console.error('Chat error:', error);
-        return 'I\\'m sorry, I\\'m unable to respond right now. Please check your connection and try again. If this persists, consult a medical professional directly for urgent questions.';
+        return "I'm sorry, I'm unable to respond right now. Please check your connection and try again. If this persists, consult a medical professional directly for urgent questions.";
     }
 }
 
