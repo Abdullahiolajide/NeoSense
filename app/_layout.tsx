@@ -1,4 +1,3 @@
-import 'react-native-gesture-handler';
 import { Colors } from '@/constants/Theme';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { DMSans_400Regular, DMSans_500Medium, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
