@@ -12,7 +12,10 @@ Deno.serve(async (req: Request) => {
     const { audioBase64 } = await req.json();
     
     if (!audioBase64) {
-      throw new Error('Audio base64 is required');
+      return new Response(JSON.stringify({ error: 'Audio base64 is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
     }
 
     // Convert base64 to binary buffer
@@ -21,22 +24,35 @@ Deno.serve(async (req: Request) => {
     for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
     }
-    const audioBuffer = bytes.buffer;
 
+    // Use a model specifically for baby cry classification
+    const MODEL_URL = 'https://api-inference.huggingface.co/models/alibidarani/sick-baby-audio-classification';
+    
     const response = await fetch(
-      'https://api-inference.huggingface.co/models/facebook/wav2vec2-large-960h',
+      MODEL_URL,
       {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${HF_API_KEY}`,
-          'Content-Type': 'application/octet-stream', // Send as octet-stream representation of the audio
+          'Content-Type': 'application/octet-stream',
         },
-        body: audioBuffer,
+        body: bytes,
       }
     );
 
     if (!response.ok) {
-      throw new Error(`Hugging Face API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`HF Error ${response.status}:`, errorText);
+      
+      // If model is loading, HF returns 503. Return it to client to retry or handle.
+      if (response.status === 503) {
+        return new Response(JSON.stringify({ error: 'Model is loading, please try again in a moment.' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 503,
+        });
+      }
+
+      throw new Error(`Hugging Face API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
@@ -45,6 +61,7 @@ Deno.serve(async (req: Request) => {
       status: 200,
     })
   } catch (error) {
+    console.error('Edge Function logical error:', error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,

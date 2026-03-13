@@ -97,15 +97,16 @@ export async function analyzeCryAudio(audioBlob: Blob): Promise<CryResult> {
         let confidence = 0;
 
         if (Array.isArray(data) && data.length > 0) {
-            const topResult = data[0];
-            label = topResult.label || 'Normal';
+            // Sort by score to get the most likely label
+            const sortedResults = [...data].sort((a, b) => (b.score || 0) - (a.score || 0));
+            const topResult = sortedResults[0];
+            const resultLabel = topResult.label || 'Normal';
             confidence = topResult.score || 0;
 
-            // Map to our categories
-            const labelLower = label.toLowerCase();
-            if (labelLower.includes('pain') || labelLower.includes('hurt')) {
+            const labelLower = resultLabel.toLowerCase();
+            if (labelLower.includes('pain') || labelLower.includes('hurt') || labelLower.includes('belly')) {
                 label = 'Pain';
-            } else if (labelLower.includes('distress') || labelLower.includes('hungry') || labelLower.includes('fuss')) {
+            } else if (labelLower.includes('distress') || labelLower.includes('hungry') || labelLower.includes('fuss') || labelLower.includes('discomfort') || labelLower.includes('tired')) {
                 label = 'Distress';
             } else if (labelLower.includes('weak') || labelLower.includes('silent') || labelLower.includes('whimper')) {
                 label = 'Weak/Silent';
