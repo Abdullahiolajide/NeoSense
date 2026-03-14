@@ -4,11 +4,11 @@
     "slug": "NeoSense",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/NeoSense_app_icon.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "neosense",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/images/NeoSense_app_icon.png",
+      "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0A1628"
     },
@@ -22,14 +22,16 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0A1628",
-        "foregroundImage": "./assets/images/NeoSense_app_icon.png",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
-        "MODIFY_AUDIO_SETTINGS"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "package": "com.igeabdullahi.NeoSense"
     },
@@ -57,6 +59,8 @@
       "typedRoutes": true
     },
     "extra": {
+      "supabaseUrl": "https://rpucfgnvvzfmarkgwwuf.supabase.co",
+      "supabaseAnonKey": "sb_publishable_3StxG0SIs5QSy27Ye4nkpg_L1GHznAw",
       "router": {
         "origin": false
       },
